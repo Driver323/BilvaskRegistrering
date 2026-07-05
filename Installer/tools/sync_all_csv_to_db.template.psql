@@ -1,0 +1,423 @@
+\set ON_ERROR_STOP on
+\echo [Bilvask] Import CSV -> staging + sync staging -> DB
+\echo [Bilvask] CSV_KAMERA_LOGG={{CSV_KAMERA_LOGG}}
+\echo [Bilvask] CSV_EGEN_FIRMA={{CSV_EGEN_FIRMA}}
+\echo [Bilvask] CSV_EGEN_FLATE={{CSV_EGEN_FLATE}}
+\echo [Bilvask] CSV_KJORETOYREG={{CSV_KJORETOYREG}}
+\echo [Bilvask] CSV_KUNDE_FIRMAER={{CSV_KUNDE_FIRMAER}}
+\echo [Bilvask] CSV_SESONG_PRISER={{CSV_SESONG_PRISER}}
+\echo [Bilvask] CSV_FAKTURA_REG={{CSV_FAKTURA_REG}}
+\echo [Bilvask] CSV_FAKTURA_ARKIV={{CSV_FAKTURA_ARKIV}}
+\echo [Bilvask] CSV_WASH_AUDIT={{CSV_WASH_AUDIT}}
+
+-- ============================================================
+-- 1) STAGING TABLES
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public._stg_kameralogg (
+  id integer,
+  datotid text,
+  registreringsnummer text,
+  selskap text,
+  type_kjoretoy text,
+  sesong text,
+  status text,
+  beregnetkostnad text
+);
+
+CREATE TABLE IF NOT EXISTS public._stg_egen_firma (
+  navn text, avdeling text, orgnr text, bedrn text, adresse1 text, adresse2 text, telefon text, epost text
+);
+
+CREATE TABLE IF NOT EXISTS public._stg_egen_flate (
+  internnr text,
+  registreringsnummer text,
+  marke text,
+  vin text,
+  lengde text,
+  selskap text,
+  type_kjoretoy text,
+  unntak boolean,
+  kommentar text
+);
+
+-- Kjoretoyregister: importujemy "surowe" linie, żeby przetrwać różne ilości kolumn
+CREATE TABLE IF NOT EXISTS public._stg_kjoretoyregister_raw (
+  line text
+);
+CREATE TABLE IF NOT EXISTS public._stg_kjoretoyregister (
+  registreringsnummer text,
+  selskap text,
+  type_kjoretoy text,
+  unntak boolean,
+  kommentar text
+);
+
+CREATE TABLE IF NOT EXISTS public._stg_kunde_firmaer (
+  selskap text, navn text, adresse1 text, adresse2 text, postnrby text, telefon text, epost text, orgnr text, fakturamerke text
+);
+
+CREATE TABLE IF NOT EXISTS public._stg_sesong_priser (
+  type text,
+  sommer text,
+  vinter text
+);
+
+CREATE TABLE IF NOT EXISTS public._stg_faktura_register (
+  fakturanr text, opprettet text, selskap text, kundenavn text, periodefra text, periodetil text,
+  antallvask text, netto text, mva text, total text, status text, kommentar text
+);
+
+CREATE TABLE IF NOT EXISTS public._stg_faktura_arkiv (
+  fakturanr text, dato text, selskap text, kundenavn text, periodefra text, periodetil text,
+  antallvask text, netto text, mva text, total text, pdffil text, annullert text
+);
+
+CREATE TABLE IF NOT EXISTS public._stg_wash_events_audit (
+  ts_utc text,
+  app text,
+  phase text,
+  source text,
+  plate text,
+  internnr text,
+  vehicle_type text,
+  season text,
+  status text,
+  note text,
+  selskap text,
+  db_ok text,
+  queued text,
+  error text
+);
+
+TRUNCATE TABLE public._stg_kameralogg;
+TRUNCATE TABLE public._stg_egen_firma;
+TRUNCATE TABLE public._stg_egen_flate;
+TRUNCATE TABLE public._stg_kjoretoyregister_raw;
+TRUNCATE TABLE public._stg_kjoretoyregister;
+TRUNCATE TABLE public._stg_kunde_firmaer;
+TRUNCATE TABLE public._stg_sesong_priser;
+TRUNCATE TABLE public._stg_faktura_register;
+TRUNCATE TABLE public._stg_faktura_arkiv;
+TRUNCATE TABLE public._stg_wash_events_audit;
+
+\echo [Bilvask] Importing CSV files...
+
+\copy public._stg_kameralogg FROM '{{CSV_KAMERA_LOGG}}' WITH (FORMAT csv, HEADER true, DELIMITER ';', ENCODING 'UTF8');
+\copy public._stg_egen_firma FROM '{{CSV_EGEN_FIRMA}}' WITH (FORMAT csv, HEADER true, DELIMITER ';', ENCODING 'UTF8');
+\copy public._stg_egen_flate FROM '{{CSV_EGEN_FLATE}}' WITH (FORMAT csv, HEADER true, DELIMITER ';', ENCODING 'UTF8');
+
+-- Kjoretoyregister (raw lines)
+\copy public._stg_kjoretoyregister_raw(line) FROM '{{CSV_KJORETOYREG}}' WITH (FORMAT text, ENCODING 'UTF8');
+
+INSERT INTO public._stg_kjoretoyregister (registreringsnummer, selskap, type_kjoretoy, unntak, kommentar)
+SELECT
+  nullif(trim((cols)[1]),'') AS registreringsnummer,
+  nullif(trim((cols)[2]),'') AS selskap,
+  nullif(trim((cols)[3]),'') AS type_kjoretoy,
+  coalesce(nullif(trim((cols)[4]),'')::boolean, false) AS unntak,
+  nullif(trim((cols)[5]),'') AS kommentar
+FROM (
+  SELECT regexp_split_to_array(line, ';') AS cols
+  FROM public._stg_kjoretoyregister_raw
+  WHERE line IS NOT NULL
+    AND trim(line) <> ''
+    AND line !~* '^\s*registreringsnummer\s*;'
+) s
+WHERE nullif(trim((cols)[1]),'') IS NOT NULL;
+
+\copy public._stg_kunde_firmaer FROM '{{CSV_KUNDE_FIRMAER}}' WITH (FORMAT csv, HEADER true, DELIMITER ';', ENCODING 'UTF8');
+\copy public._stg_sesong_priser FROM '{{CSV_SESONG_PRISER}}' WITH (FORMAT csv, HEADER true, DELIMITER ';', ENCODING 'UTF8');
+\copy public._stg_faktura_register FROM '{{CSV_FAKTURA_REG}}' WITH (FORMAT csv, HEADER true, DELIMITER ';', ENCODING 'UTF8');
+\copy public._stg_faktura_arkiv FROM '{{CSV_FAKTURA_ARKIV}}' WITH (FORMAT csv, HEADER true, DELIMITER ';', ENCODING 'UTF8');
+
+-- WashEvents_Audit.csv jest oddzielany przecinkami
+\copy public._stg_wash_events_audit FROM '{{CSV_WASH_AUDIT}}' WITH (FORMAT csv, HEADER true, DELIMITER ',', ENCODING 'UTF8');
+
+-- ============================================================
+-- 2) SYNC STAGING -> DB TABLES
+-- ============================================================
+\echo [Bilvask] Syncing staging -> DB...
+
+-- Egen firma
+CREATE TABLE IF NOT EXISTS public.egen_firma (
+  navn text,
+  avdeling text,
+  orgnr text,
+  bedrn text,
+  adresse1 text,
+  adresse2 text,
+  telefon text,
+  epost text
+);
+TRUNCATE TABLE public.egen_firma;
+INSERT INTO public.egen_firma
+SELECT navn,avdeling,orgnr,bedrn,adresse1,adresse2,telefon,epost
+FROM public._stg_egen_firma;
+
+-- Kunde firmaer
+CREATE TABLE IF NOT EXISTS public.kunde_firmaer (
+  selskap text,
+  navn text,
+  adresse1 text,
+  adresse2 text,
+  postnrby text,
+  telefon text,
+  epost text,
+  orgnr text,
+  fakturamerke text
+);
+TRUNCATE TABLE public.kunde_firmaer;
+INSERT INTO public.kunde_firmaer
+SELECT selskap,navn,adresse1,adresse2,postnrby,telefon,epost,orgnr,fakturamerke
+FROM public._stg_kunde_firmaer;
+
+-- Sesong priser
+CREATE TABLE IF NOT EXISTS public.sesong_priser (
+  type text,
+  sommer numeric,
+  vinter numeric
+);
+TRUNCATE TABLE public.sesong_priser;
+INSERT INTO public.sesong_priser (type, sommer, vinter)
+SELECT
+  type,
+  NULLIF(REPLACE(trim(sommer), ',', '.'), '')::numeric,
+  NULLIF(REPLACE(trim(vinter), ',', '.'), '')::numeric
+FROM public._stg_sesong_priser;
+
+-- Egen flate
+CREATE TABLE IF NOT EXISTS public.egen_flate (
+  id bigserial PRIMARY KEY,
+  internnr text,
+  registreringsnummer text,
+  marke text,
+  vin text,
+  lengde text,
+  selskap text,
+  type_kjoretoy text,
+  vehicle_type text,
+  unntak boolean NOT NULL DEFAULT false,
+  kommentar text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.egen_flate
+  ADD COLUMN IF NOT EXISTS vehicle_type text;
+TRUNCATE TABLE public.egen_flate;
+INSERT INTO public.egen_flate (internnr, registreringsnummer, marke, vin, lengde, selskap, type_kjoretoy, vehicle_type, unntak, kommentar, updated_at)
+SELECT
+  internnr,
+  registreringsnummer,
+  marke,
+  vin,
+  lengde,
+  selskap,
+  type_kjoretoy,
+  type_kjoretoy,
+  coalesce(unntak,false),
+  kommentar,
+  now()
+FROM public._stg_egen_flate;
+
+-- Kjoretoyregister (pojazdy firmowe)
+CREATE TABLE IF NOT EXISTS public.kjoretoyregister (
+  id bigserial PRIMARY KEY,
+  registreringsnummer text NOT NULL,
+  plate_norm text,
+  selskap text,
+  type_kjoretoy text,
+  unntak boolean NOT NULL DEFAULT false,
+  kommentar text,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.kjoretoyregister
+  ADD COLUMN IF NOT EXISTS plate_norm text;
+
+-- Uzupełnij plate_norm jeśli puste
+UPDATE public.kjoretoyregister
+SET plate_norm = upper(regexp_replace(trim(registreringsnummer), '[\\s\\.-]', '', 'g'))
+WHERE plate_norm IS NULL OR plate_norm = '';
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_kjoretoyregister_plate_norm
+ON public.kjoretoyregister (plate_norm);
+
+-- Upsert z CSV
+INSERT INTO public.kjoretoyregister (registreringsnummer, plate_norm, selskap, type_kjoretoy, unntak, kommentar, updated_at)
+SELECT
+  trim(registreringsnummer) AS registreringsnummer,
+  upper(regexp_replace(trim(registreringsnummer), '[\\s\\.-]', '', 'g')) AS plate_norm,
+  selskap,
+  type_kjoretoy,
+  coalesce(unntak,false),
+  kommentar,
+  now()
+FROM public._stg_kjoretoyregister
+ON CONFLICT (plate_norm)
+DO UPDATE SET
+  registreringsnummer = EXCLUDED.registreringsnummer,
+  selskap = EXCLUDED.selskap,
+  type_kjoretoy = EXCLUDED.type_kjoretoy,
+  unntak = EXCLUDED.unntak,
+  kommentar = EXCLUDED.kommentar,
+  updated_at = now();
+
+-- Usuń te, których nie ma w CSV
+WITH src AS (
+  SELECT upper(regexp_replace(trim(registreringsnummer), '[\\s\\.-]', '', 'g')) AS plate_norm
+  FROM public._stg_kjoretoyregister
+)
+DELETE FROM public.kjoretoyregister k
+WHERE k.plate_norm IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM src s WHERE s.plate_norm = k.plate_norm);
+
+-- Faktura (opcjonalne)
+CREATE TABLE IF NOT EXISTS public.faktura_register (
+  fakturanr text, opprettet text, selskap text, kundenavn text, periodefra text, periodetil text,
+  antallvask text, netto text, mva text, total text, status text, kommentar text
+);
+TRUNCATE TABLE public.faktura_register;
+INSERT INTO public.faktura_register
+SELECT * FROM public._stg_faktura_register;
+
+CREATE TABLE IF NOT EXISTS public.faktura_arkiv (
+  fakturanr text, dato text, selskap text, kundenavn text, periodefra text, periodetil text,
+  antallvask text, netto text, mva text, total text, pdffil text, annullert text
+);
+TRUNCATE TABLE public.faktura_arkiv;
+INSERT INTO public.faktura_arkiv
+SELECT * FROM public._stg_faktura_arkiv;
+
+-- Audit CSV
+CREATE TABLE IF NOT EXISTS public.wash_events_audit_csv (
+  id bigserial PRIMARY KEY,
+  ts_utc timestamptz,
+  app text,
+  phase text,
+  source text,
+  plate text,
+  internnr text,
+  vehicle_type text,
+  season text,
+  status text,
+  note text,
+  selskap text,
+  db_ok text,
+  queued text,
+  error text,
+  imported_at timestamptz NOT NULL DEFAULT now()
+);
+TRUNCATE TABLE public.wash_events_audit_csv;
+INSERT INTO public.wash_events_audit_csv (
+  ts_utc, app, phase, source, plate, internnr, vehicle_type, season, status, note, selskap, db_ok, queued, error, imported_at
+)
+SELECT
+  CASE
+    WHEN nullif(trim(ts_utc),'') IS NULL THEN NULL
+    ELSE (trim(ts_utc))::timestamptz
+  END,
+  app, phase, source, plate, internnr, vehicle_type, season, status, note, selskap, db_ok, queued, error, now()
+FROM public._stg_wash_events_audit;
+
+-- ============================================================
+-- 3) KameraLogg -> wash_events (merge)
+-- ============================================================
+
+-- Minimalna definicja (jeśli tabela jeszcze nie istnieje)
+CREATE TABLE IF NOT EXISTS public.wash_events (
+  id bigserial PRIMARY KEY,
+  occurred_at timestamptz NOT NULL,
+  plate text NOT NULL,
+  internnr text,
+  selskap text,
+  vehicle_type text,
+  season text,
+  status text,
+  cost numeric(12,2),
+  note text,
+  source text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+BEGIN;
+
+-- zbuduj znormalizowany zestaw z CSV
+DROP TABLE IF EXISTS public._tmp_kameralogg_dedup;
+CREATE TEMP TABLE public._tmp_kameralogg_dedup AS
+WITH base AS (
+  SELECT
+    id::bigint AS csv_id,
+    (
+      (to_date(split_part(datotid,' ',1),'DD.MM.YYYY')::text || ' ' || split_part(datotid,' ',2))::timestamp
+      AT TIME ZONE 'Europe/Oslo'
+    ) AS occurred_at,
+    nullif(trim(registreringsnummer),'') AS plate,
+    nullif(trim(selskap),'') AS selskap,
+    nullif(trim(type_kjoretoy),'') AS vehicle_type,
+    nullif(trim(sesong),'') AS season,
+    nullif(trim(status),'') AS status,
+    NULLIF(trim(beregnetkostnad),'')::numeric(12,2) AS cost
+  FROM public._stg_kameralogg
+  WHERE nullif(trim(registreringsnummer),'') IS NOT NULL
+), keyed AS (
+  SELECT
+    *,
+    upper(regexp_replace(plate, '[\\s\\.-]', '', 'g')) AS plate_norm,
+    date_trunc('minute', occurred_at AT TIME ZONE 'Europe/Oslo') AS minute_bucket
+  FROM base
+)
+SELECT DISTINCT ON (selskap, plate_norm, minute_bucket)
+  csv_id, occurred_at, plate, selskap, vehicle_type, season, status, cost, plate_norm, minute_bucket
+FROM keyed
+ORDER BY selskap, plate_norm, minute_bucket, csv_id DESC;
+
+-- UPDATE istniejących w DB
+UPDATE public.wash_events we
+SET
+  vehicle_type = COALESCE(d.vehicle_type, we.vehicle_type),
+  season = COALESCE(d.season, we.season),
+  status = COALESCE(d.status, we.status),
+  cost = COALESCE(d.cost, we.cost),
+  updated_at = now(),
+  source = CASE
+    WHEN we.source IS NULL OR trim(we.source) = '' THEN 'csv_sync'
+    WHEN lower(we.source) LIKE '%csv_sync%' THEN we.source
+    ELSE we.source || ',csv_sync'
+  END
+FROM public._tmp_kameralogg_dedup d
+WHERE
+  coalesce(we.selskap,'') = coalesce(d.selskap,'')
+  AND upper(regexp_replace(coalesce(we.plate,''), '[\\s\\.-]', '', 'g')) = d.plate_norm
+  AND date_trunc('minute', we.occurred_at AT TIME ZONE 'Europe/Oslo') = d.minute_bucket;
+
+-- INSERT nowych
+INSERT INTO public.wash_events (
+  occurred_at, plate, internnr, selskap, vehicle_type, season, status, cost, note, source, created_at, updated_at
+)
+SELECT
+  d.occurred_at,
+  d.plate,
+  NULL,
+  d.selskap,
+  d.vehicle_type,
+  d.season,
+  d.status,
+  d.cost,
+  NULL,
+  'csv_sync',
+  now(),
+  now()
+FROM public._tmp_kameralogg_dedup d
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM public.wash_events we
+  WHERE
+    coalesce(we.selskap,'') = coalesce(d.selskap,'')
+    AND upper(regexp_replace(coalesce(we.plate,''), '[\\s\\.-]', '', 'g')) = d.plate_norm
+    AND date_trunc('minute', we.occurred_at AT TIME ZONE 'Europe/Oslo') = d.minute_bucket
+);
+
+COMMIT;
+
+\echo [Bilvask] FULL sync completed.
+\echo [Bilvask] OK
