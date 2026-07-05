@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "BilvaskRegistrering.Worker": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "BILVASK_INSTALL_CODE": "BVR1.eyJleHAiOiIyMDMwLTEyLTMxIiwicCI6IkJpbHZhc2tSZWdpc3RyZXJpbmciLCJ2IjoiMSIsIm4iOiJlYTZiYjU5ZmJlOTY0MTFkODQzMDE3NjExNzYxZDQzNCJ9.EsotVW1-DfQBrk9yVsKvBOyKaT0Y6yzHCJRNXRgCcYeBOssK4jHFKliO9-nem_gNrIdL8Wk8ikZmamtf9PGGEcg92IDmVraujKH4JfzKxTC0I0b3g-SfinwI4Lrtb9EQFkCgD3x8NsKD8muufzvl5P297oW1HUU0xHXrRZs3C0lZthTyjn6of90FpwTh0m-40th2FW5kD9sHKIMX7Xe1IsK429i2uuYUpepxclZ3RO0xYXzSy8J8A_HeoKJ925I7f-Ko5WJO5-DcqAgpZdCAK8uM6wqmrRpvpXIsjmptNi7JbJPIxoqeo8aOTYRqCYEnj_8csZmFZnFuyaRW90Um3Q"
+      }
+    }
+  }
+}

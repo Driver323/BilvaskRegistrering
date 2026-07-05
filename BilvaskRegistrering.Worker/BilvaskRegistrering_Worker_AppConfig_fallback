@@ -1,0 +1,59 @@
+--- /tmp/orig_AppConfig.cs	2026-03-21 07:08:24.218108440 +0000
++++ /tmp/bilvask/BilvaskRegistrering/BilvaskRegistrering.Worker/AppConfig.cs	2026-03-21 07:08:14.278239596 +0000
+@@ -102,16 +102,30 @@
+ 
+     private static string LoadDokumentFolder()
+     {
+-        // default path used by admin app and by the CSV bundle
+-        var doc = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+-        var defaultFolder = Path.Combine(doc, "BilvaskRegistrering");
+-
+         var runtime = TryLoadRuntime();
+-        var folder = runtime?.DokumentFolder;
+-        if (string.IsNullOrWhiteSpace(folder)) folder = defaultFolder;
++        return ResolveDokumentFolder(runtime?.DokumentFolder);
++    }
+ 
+-        try { Directory.CreateDirectory(folder!); } catch { /* ignore */ }
+-        return folder!;
++    private static string ResolveDokumentFolder(string? configuredFolder)
++    {
++        var defaultFolder = Path.Combine(
++            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
++            "BilvaskRegistrering");
++
++        var folder = string.IsNullOrWhiteSpace(configuredFolder)
++            ? defaultFolder
++            : configuredFolder;
++
++        try
++        {
++            Directory.CreateDirectory(folder);
++            return folder;
++        }
++        catch
++        {
++            Directory.CreateDirectory(defaultFolder);
++            return defaultFolder;
++        }
+     }
+ 
+     public static AppConfig Load()
+@@ -157,14 +171,9 @@
+         var itsPort = runtime?.ItsPort ?? config.GetValue("ItsApi:Port", 7070);
+         var itsPath = runtime?.ItsPath ?? config.GetValue<string>("ItsApi:Path") ?? "/NotificationInfo/TollgateInfo";
+ 
+-        // Offline queue location: keep it next to the CSV/doc folder so both apps see the same queue.
+-        var docFolder = runtime?.DokumentFolder;
+-        if (string.IsNullOrWhiteSpace(docFolder))
+-        {
+-            docFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "BilvaskRegistrering");
+-        }
+-        try { Directory.CreateDirectory(docFolder!); } catch { /* ignore */ }
+-        var offlinePath = Path.Combine(docFolder!, "worker_offline_queue.csv");
++        // Offline queue location: keep it next to the resolved CSV/doc folder.
++        var docFolder = ResolveDokumentFolder(runtime?.DokumentFolder);
++        var offlinePath = Path.Combine(docFolder, "worker_offline_queue.csv");
+ 
+         var debounceSeconds = config.GetValue("Worker:PlateDebounceSeconds", 3);
+ 
