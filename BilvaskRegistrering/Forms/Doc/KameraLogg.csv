@@ -1,0 +1,15 @@
+Id;DatoTid;Registreringsnummer;Selskap;Type kjøretøy;Sesong;Status;BeregnetKostnad
+1;2026-01-31 20:45:00;EB 90663;Tide;Personbil;Vinter;Unntak;0
+2;2026-01-31 20:49:08;EB 90663;Tide;Personbil;Vinter;Unntak;0
+3;2026-01-31 20:56:37;EB 90663;Tide;Personbil;Vinter;Unntak;0
+4;2026-01-31 23:13:25;EB 90663;Tide;Personbil;Vinter;Unntak;0
+5;2026-01-31 23:19:22;EB 90663;Tide;Personbil;Vinter;Unntak;0
+6;2026-01-31 23:39:23;EB 90663;Tide;Personbil;Vinter;Unntak;0
+7;2026-02-01 06:59:20;EB 90663;Tide;Personbil;Vinter;Unntak;0
+8;2026-02-01 08:53:00;EB 90663;Tide;Personbil;Vinter;Unntak;0
+9;2026-02-01 09:09:25;EB 90663;Tide;Personbil;Vinter;Unntak;0
+10;2026-02-01 16:31:17;EB 90663;Tide;Personbil;Vinter;Unntak;0
+11;2026-02-01 16:39:31;EB 90663;Tide;Personbil;Vinter;Unntak;0
+12;2026-02-01 23:22:42;1X35916;Ukjent;;Vinter;UregistrertKjøretøy;0
+13;2026-02-01 23:23:08;SK 25916;Ukjent;;Vinter;UregistrertKjøretøy;0
+14;2026-02-01 23:23:21;SX 25916;Ambulanser;Liten;Vinter;OK;629,00

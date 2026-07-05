@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets\BilvaskRegistrering.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Remove="appsettings.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+
+	<!-- For the in-process ITSAPI HTTP server (Kestrel / minimal ASP.NET Core) -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LibVLCSharp" Version="3.9.0" />
+    <PackageReference Include="OpenCvSharp4" Version="4.10.0.20240616" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" />
+    <PackageReference Include="OpenCvSharp4.Extensions" Version="4.10.0.20240616" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="8.0.1" />
+    <PackageReference Include="Npgsql" Version="8.0.3" />
+  
+    <PackageReference Include="LibVLCSharp.WinForms" Version="3.9.0" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- MainForm.resx is orphan (no MainForm.cs). Exclude to avoid MSBuild manifest resource errors -->
+    <EmbeddedResource Remove="MainForm.resx" />
+  </ItemGroup>
+
+</Project>
